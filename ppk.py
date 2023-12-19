@@ -25,6 +25,8 @@ cid = 1092302014647640125
 mf = '%Y-%m-%d %H:%M:%S:%f'
 jonid = 339395756568084482
 jonid = 466724591109144588
+ppkc = 1017423962617168015
+cfgid = 1017423962617168015
 
 def tostr(d):
     return d.strftime(mf)
@@ -48,7 +50,7 @@ class ppk_cog(commands.Cog):
             namesq = ['JonSolo']
             ships = []
             num = 0
-            channel_id = 1017423962617168015  # Replace with the desired channel ID
+            channel_id = ppkc  # Replace with the desired channel ID
             channel = self.bot.get_channel(channel_id)
             lut = await read_lut(channel)
             while namesq and num < 50:
@@ -84,7 +86,7 @@ class ppk_cog(commands.Cog):
 
     @commands.command()
     async def ppkerrors(self, ctx):
-        channel_id = 1017423962617168015
+        channel_id = ppkc
         channel = self.bot.get_channel(channel_id)
         if self.errors:
             await channel.send(f'error messages: {len(self.errors)}')
@@ -93,16 +95,17 @@ class ppk_cog(commands.Cog):
 
     @commands.command()
     async def ppk(self, ctx, *args):
-        await ppk_do(self)
+        await self.ppk_do(True)
 
     @tasks.loop(hours = 8)
     async def keeper(self, force = False):
+        return
         if self.started:
             try:
-                await ppk_do(self)
+                await self.ppk_do()
                 await self.ppkerrors(None)
             except Exception as e:
-                channel_id = 1017423962617168015
+                channel_id = ppkc
                 channel = self.bot.get_channel(channel_id)
                 await channel.send(f'error: {e}, error messages: {len(self.errors)}')
                 for i in self.errors:
@@ -110,33 +113,35 @@ class ppk_cog(commands.Cog):
         else:
             self.started = True
 
-    async def ppk_do(self):
+    async def ppk_do(self, force = False):
         b = self.bot
-        channel_id = 1017423962617168015
+        channel_id = ppkc
         channel = b.get_channel(channel_id)
+        cfgc = b.get_channel(cfgid)
         today = datetime.utcnow()
         start_date = today - timedelta(days=today.weekday() + 7)
         end_date = start_date + timedelta(days=7)
         week = (start_date + timedelta(1)).isocalendar()[1]
         year = (start_date + timedelta(1)).year
-        if not await can_post(channel, week, year):
-            return
-        limits = await read_limits(self, channel)
-        lut = await read_lut(self, channel)
+        if not force:
+            if not await can_post(channel, week, year):
+                return
+        await channel.send('ppk started')
+        limits = await read_limits(self, cfgc)
+        lut = await read_lut(self, cfgc)
         d = get()
         ret = {}
         unknown = []
         capclasses = ['Versatile Assault Ship', 'Carrier', 'Industrial Command Ship', 'Dreadnought', 'Supercarrier', 'Force Auxiliary', 'Capital Industrial Ship']
         capkills = []
         for _, v in d.items():
-            if v['killer_ship_type'] in capclasses:
+            if v['victim_ship_category'] in capclasses:
                 capkills.append(v)
                 continue
-            pilot = v['killer_full_name']
+            pilot = v['killer_name']
             isk = v['isk']
             loc = ''
             ship = v['victim_ship_type']
-            print(ship)
             if ship[0] == '"':
                 ship = ship[1:]
             if ship[-1] == '"':
@@ -184,7 +189,8 @@ class ppk_cog(commands.Cog):
                 isk += lut[i[0]]['val']
             total += isk
 
-        mul = await read_budget(self, channel)/total
+        mul = await read_budget(self, cfgc)/total
+        payouts = {}
         for k, v in ret.items():
             d = {}
             isk = 0
@@ -196,6 +202,7 @@ class ppk_cog(commands.Cog):
                     d[t] = 1
                 isk += lut[i[0]]['val']
             s += ' '.join([k, ':', '{:.2f}'.format(isk*mul), 'cookies']) + '\n'
+            payouts[k] = int(isk*mul)
             for k, v in d.items():
                 s += ' '.join(['    ', str(v) + 'x', k]) + '\n'
         s += ' '.join(['total:', str(total*mul), 'cookies']) + '\n'
@@ -206,6 +213,38 @@ class ppk_cog(commands.Cog):
         s += '\n'.join([x['image_url'] for x in capkills])
         msg = await channel.send(s)
         await msg.pin()
+        payouts = await self.handle_payouts(channel, payouts)
+        pos = '\n'.join([f'{k}: :{v}' for k, v in payouts.items()])
+        await channel.send('buffered payouts:\n' + pos + '\nif you see your alt here, claim it with `.myalt <name>`')
+
+    async def handle_payouts(self, ctx, d):
+        alts = pd('alts.json')
+        ret = {}
+        for k, v in d.items():
+            k = k.lower()
+            id = None
+            for ak, av in alts.items():
+                if k in av:
+                    id = ak
+            if not id:
+                ret[k] = v
+            else:
+                print(f'adding {k} {v}')
+                await ctx.send(self.bot.cogs['Banking']._change(id, v))
+        return ret
+
+    @commands.command()
+    async def myalt(self, ctx, name, member = None):
+        alts = pd('alts.json')
+        if ctx.message.mentions:
+            k = str(ctx.message.mentions[0].id)
+        else:
+            k = str(ctx.author.id)
+        if k not in alts:
+            alts[k] = []
+        alts[k].append(name.lower())
+        alts.sync()
+        await ctx.send(f'your alts: {alts[k]}')
 
 async def can_post(c, week, year):
     pins = await c.pins()
@@ -327,5 +366,3 @@ def getone(n, t):
         d.append(tmp)
     return d
 
-if __name__ == '__main__':
-    print(get())
