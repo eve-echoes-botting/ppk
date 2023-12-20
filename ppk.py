@@ -234,12 +234,10 @@ class ppk_cog(commands.Cog):
         return ret
 
     @commands.command()
-    async def myalt(self, ctx, name, member = None):
+    async def myalt(self, ctx, *name):
+        name = ' '.join(name)
         alts = pd('alts.json')
-        if ctx.message.mentions:
-            k = str(ctx.message.mentions[0].id)
-        else:
-            k = str(ctx.author.id)
+        k = str(ctx.author.id)
         if k not in alts:
             alts[k] = []
         alts[k].append(name.lower())
