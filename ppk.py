@@ -43,48 +43,6 @@ class ppk_cog(commands.Cog):
         self.started = False
 
     @commands.command()
-    async def ppknew(self, ctx):
-        try:
-            ids = []
-            names = []
-            namesq = ['JonSolo']
-            ships = []
-            num = 0
-            channel_id = ppkc  # Replace with the desired channel ID
-            channel = self.bot.get_channel(channel_id)
-            lut = await read_lut(channel)
-            while namesq and num < 50:
-                await asyncio.sleep(0.1)
-                n = namesq.pop()
-                if ' ' in n and n[0] == '"' and n[-1] == '"':
-                    n = n[1:-1]
-                if n not in names:
-                    num += 1
-                    names.append(n)
-                    d = getall(n)
-                    for i in d:
-                        for j in ['victim_ship_type', 'killer_ship_type']:
-                            s = i[j]
-                            if ' ' in s and s[0] == '"' and s[-1] == '"':
-                                s = s[1:-1]
-                            if s not in ships and s not in lut.keys():
-                                ships.append(s)
-                        for j in ['victim_name', 'killer_name']:
-                            n = i[j]
-                            if n not in names:
-                                namesq.append(n)
-            s = ''
-            for i in ships:
-                s += i + '\n'
-                if len(s) > 1500:
-                    await ctx.send(s)
-                    s = ''
-            await ctx.send('done')
-        except Exception as e:
-            await ctx.send(str(s))
-            raise
-
-    @commands.command()
     async def ppkerrors(self, ctx):
         channel_id = ppkc
         channel = self.bot.get_channel(channel_id)
@@ -95,28 +53,27 @@ class ppk_cog(commands.Cog):
 
     @commands.command()
     async def ppk(self, ctx, *args):
-        await self.ppk_do(True)
+        await self.ppk_do(ctx.channel)
 
     @tasks.loop(hours = 8)
     async def keeper(self, force = False):
-        return
-        if self.started:
-            try:
-                await self.ppk_do()
-                await self.ppkerrors(None)
-            except Exception as e:
-                channel_id = ppkc
-                channel = self.bot.get_channel(channel_id)
-                await channel.send(f'error: {e}, error messages: {len(self.errors)}')
-                for i in self.errors:
-                    await channel.send(f'[error msg]({i.jump_url}), error in line: {self.errmsg}')
-        else:
-            self.started = True
+        try:
+            await self.ppk_do()
+            await self.ppkerrors(None)
+        except Exception as e:
+            channel_id = ppkc
+            channel = self.bot.get_channel(channel_id)
+            await channel.send(f'error: {e}, error messages: {len(self.errors)}')
+            for i in self.errors:
+                await channel.send(f'[error msg]({i.jump_url}), error in line: {self.errmsg}')
 
-    async def ppk_do(self, force = False):
+    async def ppk_do(self, channel = None):
         b = self.bot
-        channel_id = ppkc
-        channel = b.get_channel(channel_id)
+        force = True
+        if not channel:
+            force = False
+            channel_id = ppkc
+            channel = b.get_channel(channel_id)
         cfgc = b.get_channel(cfgid)
         today = datetime.utcnow()
         start_date = today - timedelta(days=today.weekday() + 7)
@@ -139,6 +96,8 @@ class ppk_cog(commands.Cog):
                 capkills.append(v)
                 continue
             pilot = v['killer_name']
+            if ' ' in pilot and pilot[0] == '"' and pilot[-1] == '"':
+                pilot = pilot[1:-1]
             isk = v['isk']
             loc = ''
             ship = v['victim_ship_type']
@@ -213,11 +172,11 @@ class ppk_cog(commands.Cog):
         s += '\n'.join([x['image_url'] for x in capkills])
         msg = await channel.send(s)
         await msg.pin()
-        payouts = await self.handle_payouts(channel, payouts)
+        payouts = await self.handle_payouts(channel, payouts, force)
         pos = '\n'.join([f'{k}: :{v}' for k, v in payouts.items()])
         await channel.send('buffered payouts:\n' + pos + '\nif you see your alt here, claim it with `.myalt <name>`')
 
-    async def handle_payouts(self, ctx, d):
+    async def handle_payouts(self, ctx, d, force):
         alts = pd('alts.json')
         ret = {}
         for k, v in d.items():
@@ -230,7 +189,8 @@ class ppk_cog(commands.Cog):
                 ret[k] = v
             else:
                 print(f'adding {k} {v}')
-                await ctx.send(self.bot.cogs['Banking']._change(id, v))
+                if not force:
+                    await ctx.send(self.bot.cogs['Banking']._change(id, v))
         return ret
 
     @commands.command()
