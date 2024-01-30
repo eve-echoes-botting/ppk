@@ -160,7 +160,7 @@ class ppk_cog(commands.Cog):
                 else:
                     d[t] = 1
                 isk += lut[i[0]]['val']
-            s += ' '.join([k, ':', '{:.2f}'.format(isk*mul), 'cookies']) + '\n'
+            s += f'k: {iskf(isk*mul)} cookies ({iskf(isk)} in kills)\n'
             payouts[k] = int(isk*mul)
             for k, v in d.items():
                 s += ' '.join(['    ', str(v) + 'x', k]) + '\n'
@@ -323,4 +323,12 @@ def getone(n, t):
             tmp[kv] = j[1]
         d.append(tmp)
     return d
+
+def iskf(total):
+    for i in [(1e9, 'b'), (1e6, 'm'), (1e3, 'k')]:
+        if total > i[0]:
+            t = '{:.2f}'.format(total/i[0])
+            total = f'{t}{i[1]}'
+            break
+    return total
 
